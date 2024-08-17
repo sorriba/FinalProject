@@ -1,0 +1,102 @@
+---
+title: "CovidData"
+author: "A. Sorri"
+date: "2024-08-17"
+output: html_document
+---
+### Analyzing COVID-19 Cases and Deaths in Canada
+
+Data Source: https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series/
+
+Description of Data: This data set comes from the Johns Hopkins Coronavirus Resource Center which has collected global COVID-19 data between 2020 and 2023. The data set includes information about the number of recorded COVID-19 infections and about the number of COVID related deaths for each country and state/province. 
+
+Libraries Used in Analysis: tidyverse, lubridate, ggplot2.
+
+## Step 1 and 2: Import Data and Tidy/Transform
+``` {r chunk-label, echo = TRUE}
+library(tidyverse)
+library(lubridate)
+#Import and Read in the Data
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_global.csv","time_series_covid19_deaths_global.csv", "time_series_covid19_confirmed_US.csv", "time_series_covid19_deaths_US.csv")
+urls <- str_c(url_in, file_names)
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+US_cases <- read_csv(urls[3])
+US_deaths <- read_csv(urls[4])
+#Tidy each data file
+US_cases <- US_cases %>% pivot_longer(cols= -(UID:Combined_Key), names_to = "date", values_to = "cases") %>% select(Admin2:cases) %>% mutate(date=mdy(date)) %>% select(-c(Lat,Long_))
+US_deaths <- US_deaths %>% pivot_longer(cols=-(UID:Population), names_to = "date", values_to = "deaths") %>% select(Admin2:deaths) %>% mutate(date=mdy(date)) %>% select(-c(Lat, Long_))
+global_cases <- global_cases %>% pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long), names_to = "date", values_to = "cases") %>% select(-c(Lat, Long))
+global_deaths <- global_deaths %>% pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long), names_to = "date", values_to = "deaths") %>% select(-c(Lat, Long))
+global <- global_cases %>% full_join(global_deaths) %>% rename(Country_Region = `Country/Region`, Province_State = `Province/State`) %>% mutate(date =mdy(date))
+global
+print(summary(global))
+global <- global %>% filter(cases > 0)
+summary(global)
+global <- global %>% unite("Combined_Key", c(Province_State, Country_Region),sep = ",",na.rm = TRUE, remove = FALSE)
+uid_lookup_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv"
+uid <- read_csv(uid_lookup_url) %>% select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2))
+global <- global %>% left_join(uid, by = c("Province_State", "Country_Region")) %>% select(-c(UID, FIPS)) %>% select(Province_State, Country_Region, date, cases, deaths, Population, Combined_Key)
+global
+```
+## Step 3 Visualize and Analyze the Data
+### How do the total number of COVID-19 cases and deaths change from 2020 and 2023? What does the trend look like?
+
+### Let's visualize the trajectory of the total number of COVID cases and the total number of deaths from COVID, in Canada, between 2020 and 2023.
+```{r chunk-label2, echo = TRUE}
+#Filter our global data to only the data for Canada.
+library(ggplot2)
+Cases_Canada <- global %>% group_by(Province_State, Country_Region, date) %>% group_by(year = lubridate::year(date)) %>% filter(Country_Region == "Canada")
+Cases_Canada
+summary(Cases_Canada)
+
+#A ggplot is created to visualize the trend in covid cases and deaths. The following plots show how the total number of covid-19 cases and the total number of deaths continue to steadily rise from 2020 until 2023. The total number of COVID-19 cases in Canada is well over 4 million by the beginning of 2023. And there had been over 50,000 covid related deaths by the beginning of 2023. The exact totals will be counted next.
+ggplot(Cases_Canada, aes(x=date, y=cases)) +
+  geom_bar(stat="identity", width=0.1) +
+  theme_classic() +
+  labs(title = "Covid-19 Cases in Canada", x= "Year", y= "Total Cases to Date") +
+  theme(plot.title = element_text(hjust = 0.1))
+
+ggplot(Cases_Canada, aes(x=date, y=deaths)) +
+  geom_bar(stat="identity", width=0.1) +
+  theme_classic() +
+  labs(title = "Covid-19 Deaths in Canada", x= "Year", y= "Total Deaths to Date") +
+  theme(plot.title = element_text(hjust = 0.1))
+```
+
+### What is the max (total) number of covid related deaths and covid cases in Canada? What was the precise date range of the data recored in Canada? Is there a significant relationship or correlation between the total number of covid cases and the total number of covid deaths?
+```{r chunk-label3, echo = TRUE}
+#Let's analyze the max (total) number of covid related deaths and covid cases in Canada. According to this data set the max number of deaths is 51719 and the max number of covid cases is 4617095. These numbers correspond to what we saw in the plots above. This indicates that there were total of 4,617,095 covid cases and a total of 51,719 covid deaths recorded.
+Canada_totals <- Cases_Canada %>% group_by(Country_Region, date) %>% summarize(cases=sum(cases), deaths=sum(deaths)) %>% select(Country_Region, date, cases, deaths) %>% ungroup()
+Canada_totals
+print(max(Canada_totals$cases))
+print(max(Canada_totals$deaths))
+
+#Then we can determine the precise date range for all of the data collected about the COVID cases and deaths in Canada. Data was recorded between 2020-01-23 and 2023-03-09.
+print(min(Canada_totals$date))
+print(max(Canada_totals$date))
+
+#Is there a statistically significant relationship/correlation between the number of deaths and covid cases in Canada? Looking at this linear model, assuming a p-value of .05, there is statistically significant correlation between the two variables since the F-stat is high and the p-value is lower than .05, the p-value is: < 2.2e-16. I have also plotted the linear regression model to visualize this correlation.
+model <- lm(deaths~cases, data = Cases_Canada)
+summary(model)
+
+plot(Cases_Canada$cases, Cases_Canada$deaths, col = "blue",
+     main = "Total COVID Cases & Deaths in Canada",
+     abline(model), cex = 1.3, pch = 16,
+     xlab = "Total COVID Cases", ylab = "Total COVID Deaths")
+
+
+```
+
+
+## Step 4 Conclusion and Bias
+
+**Bias**: There could be potential bias in the data set depending on how covid-19 case and death data are collected and recorded. If there were multiple sources for the collection of covid data within a certain region it may be possible that a single covid case could be counted more than once unless data collectors were mindful in verifying that each covid case recorded was a unique person/case. This could lead to an overestimation in the counts of covid infections and deaths. It's also likely that not all covid infections were recorded as some people didn't know if they were infected or they did not all cases would officially be reported. In addition, not all potentially infected people would have easy access to covid testing to confirm an infection. Therefore, there is potential bias in covid-19 data due to the potential difficulties or hurdles in accurately testing and reporting infections. These challenges could have lead to under counted covid cases and covid related deaths. 
+
+**Conclusion**: This analysis showed that covid-19 cases and deaths in Canada continued to rise between 2020 and 2023. The analysis indicates that there were total of 4,617,095 million covid cases and a total of 51,719 covid deaths recorded. GGplots were created to visualize the trend in total cases and deaths by year. The data recorded for Canada was collected between 01/23/2020 and 03/09/2023. Then a linear model was created to determine if there was a statistically significant relationship between the total number of covid cases to date and the total number of covid deaths to date. The model had a corresponding p-value of < 2.2e-16, which is much less than .05, therefore there is a statistically significant relationship or correlation between the two variables. A plot for the linear regression model was created to visualize the strength of the correlation. 
+
+```{r chunk-label4, echo = TRUE}
+sessionInfo()
+```
+

@@ -1,0 +1,91 @@
+---
+title: "MyNYPDProject"
+author: "A. Sorri"
+date: "2024-07-24"
+output:
+  html_document: default
+  pdf_document: default
+---
+### Analyzing data from the NYPD Shooting Incident Data (Historic)
+My Data Source: https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic 
+
+Description of Data: This data set contains every shooting recorded in New York from 2006 to 2023, at the time of this analysis. The data set includes data about the shooting location, date, and time, in addition to the demographics of the victims and perpetrators. 
+
+Libraries used include ggplot2, dplyr, and tidyverse.
+
+## Step 1 and 2: Start an RMD & Tidy/Transform Data
+```{r chunk-label, echo = TRUE}
+# Here I am reading in the data
+
+library(tidyverse)
+library(dplyr)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+url_in
+NYPD_data <- read_csv(url_in)
+NYPD_data <- distinct(NYPD_data)
+
+#Here I have removed several columns and made the date column a date type
+
+NYPD_data = subset(NYPD_data, select = -c(JURISDICTION_CODE, X_COORD_CD, Y_COORD_CD, Latitude, Longitude, PRECINCT, Lon_Lat, LOC_OF_OCCUR_DESC, LOCATION_DESC, LOC_CLASSFCTN_DESC, PERP_AGE_GROUP, PERP_SEX, PERP_RACE) )
+NYPD_data$OCCUR_DATE <- as.Date(NYPD_data$OCCUR_DATE, format = "%m/%d/%y")
+
+#Here I removed a single row with an uncategorized age group, the age group was "1022".
+
+NYPD_data <- subset(NYPD_data, NYPD_data$VIC_AGE_GROUP != "1022" )
+
+print(summary(NYPD_data))
+```
+
+
+## Step 3 Vizualization and Analysis
+### Which Borough and Age Group is at the greatest risk of a Shooting Incident? When do Shootings Occur on Average? Is there a significant relationship between Victim Age and Murder?
+
+```{r chunk-label2, echo = TRUE}
+# A. Here I have created box plot to visualize the Victim Age Group against the Occur Time of the Shooting Incident. The mean is shown visually with the blue star on the box plot. It appears that the mean Occur Time is very similar across age groups, most shootings occurred in the late afternoon, however, for the 65+ and Unknown categories the range of the occurrence time is much narrower compared to the other groups.
+
+library(ggplot2)
+ggplot(NYPD_data, aes(x= VIC_AGE_GROUP, y = OCCUR_TIME)) +  geom_boxplot(fill='red') + stat_summary(fun=mean, colour="blue", geom="point", shape=8, size=2, show.legend=FALSE)
+
+
+
+# B. Here I have created a box plot to visualize the Borough against the Occur Time of the Shooting Incidents. The mean is shown visually with the blue star on the box plot. The range and mean appear very similar to each other for each borough, but Queens has a slightly earlier average shooting occurrence time than the other boroughs. The Bronx and Brooklyn appear to have a slightly later mean occurrence time.
+ggplot(NYPD_data, aes(x= BORO, y = OCCUR_TIME)) +  geom_boxplot(fill='red') + stat_summary(fun=mean, colour="blue", geom="point", shape=8, size=2, show.legend=FALSE)
+
+# C. The Bar Plot shows the proportion of people in each Victim Age Group, it appears that the category of people that experienced the least number of shooting are in the 65+ and unknown categories. The age group that had the highest number of shooting were the 25-44 year old age group.
+
+barplot(prop.table(table(NYPD_data$VIC_AGE_GROUP)), cex.names=.5, cex.axis=.5, xlab = "Victim Age Group", ylab = "Proportion of Incidences")
+
+#D. In the following bar plot Brooklyn has the highest proportion of incidents and Staten Island has the least.
+
+barplot(prop.table(table(NYPD_data$BORO)), width=c(.1,.1,.1,.1,.1), cex.names=.5, cex.axis=.5, xlab = "Boro", ylab = "Proportion of Incidences") 
+
+#E. Here I calculated the total number of incidences by Borough, Brooklyn has the most shootings.
+
+NYPD_data %>% 
+group_by(BORO) %>% 
+summarise(Total = n()) 
+
+#F. Here I calculated the total number of incidences by Victim Age Group, the 18-24 and 25-44 age groups experienced the most shootings.
+
+NYPD_data %>% 
+group_by(VIC_AGE_GROUP) %>% 
+summarise(Total = n()) 
+
+#G. My linear model looks at the variable Victim Age Group, on the response, Statistical Murder Flag. Assuming an alpha of .05, based on the F-test (F-statistic: 39.91) and corresponding p-value (p-value: < 2.2e-16), there is a statistically significant relationship between the two variables. This linear model shows that there is a statistical significant relationship between the victim's age group and if the shooting resulted in that victim's death (murder). 
+
+lm_vic_age <- lm(STATISTICAL_MURDER_FLAG ~ VIC_AGE_GROUP, data = NYPD_data)
+summary(lm_vic_age)
+
+```
+
+## Step 4: Bias and Conclusion
+Conclusion: In conclusion the range of occurrence times for shootings across boroughs didn't seem to drastically deviate, Queens appears to have the earliest mean shooting occurrence time, but all mean occurrence times occur in the afternoon. Occurrence time of shooting by Victim Age Group did have more variety. The 65+ and Unknown age groups had a much smaller range in occurrence times but all mean shooting occurrences were in the afternoon as well. The total number of shootings for each Borough and Victim Age Group were calculated and visualized in a bar plot. Age Groups 18-24 and 25-44 experienced the highest proportion of shooting and the 65+ and Unknown age groups experienced the smallest proportion of shootings. Brooklyn had the highest number of shootings and Staten Island had the least. I created a linear model between Victim Age Group and Statistical Murder Flag. According to the NYPD Data Shooting Data report, Statistical Murder Flag is marked as True, if the shooting resulted in the victim's death (a murder). According to the linear model, assuming an alpha of .05, there was a statistically significant relationship or correlation between the two variables.
+
+Bias: Since there were a total of 64 incidents in which the victims' age was unknown, this could have lead to some bias; had their ages been known this could have changed the analysis done on the victim age groups. The NYPD Shooting data also only encompasses shooting that were recorded by the police, there could be bias in the data but we would have to know more about how the data was collected to determine that. Bias in policing or the recording of data could impact the data set but it cannot be said with certainty if there is such bias in this data set without further investigation. I don't believe that any personal bias affected the analyses of data in this report, but I do believe that I would have assumed older age groups to be less likely involved in shooting incidents. I don't have a grasp of the differences between the boroughs of New York, so I wouldn't really have any bias or assumptions there.
+
+``` {r chunk-label3, echo = TRUE}
+sessionInfo()
+```
+
+
+
